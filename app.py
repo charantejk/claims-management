@@ -1,10 +1,53 @@
 from flask import Flask, request, jsonify
-from manager import ClaimsManager
-from entities import Policyholder, Policy, Claim
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os
 
-app = Flask(__name__)
-manager = ClaimsManager()
+app = Flask(_name_)
+
+# Database Configuration
+DB_USER = "postgres"
+DB_PASSWORD = "postgres"
+DB_HOST = "localhost"  # or the IP where your Docker container is running
+DB_PORT = "5432"      # default PostgreSQL port
+DB_NAME = "postgres"
+
+# SQLAlchemy configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize SQLAlchemy
+db = SQLAlchemy(app)
+
+# Models
+class Policyholder(db.Model):
+    _tablename_ = 'policyholder'
+    
+    policyholder_id = db.Column(db.String(50), primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    contact_info = db.Column(db.String(255), nullable=False)
+    policies = db.relationship('Policy', backref='policyholder', lazy=True, cascade="all, delete-orphan")
+
+class Policy(db.Model):
+    _tablename_ = 'policy'
+    
+    policy_id = db.Column(db.String(50), primary_key=True)
+    policy_type = db.Column(db.String(100), nullable=False)
+    coverage_amount = db.Column(db.Numeric(12, 2), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    policyholder_id = db.Column(db.String(50), db.ForeignKey('policyholder.policyholder_id'), nullable=False)
+    claims = db.relationship('Claim', backref='policy', lazy=True, cascade="all, delete-orphan")
+
+class Claim(db.Model):
+    _tablename_ = 'claim'
+    
+    claim_id = db.Column(db.String(50), primary_key=True)
+    description = db.Column(db.Text, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    status = db.Column(db.String(20), nullable=False)
+    policy_id = db.Column(db.String(50), db.ForeignKey('policy.policy_id'), nullable=False)
 
 # Root endpoint
 @app.route('/')
@@ -21,39 +64,54 @@ def create_policyholder():
             name=data['name'],
             contact_info=data['contact_info']
         )
-        manager.create_policyholder(ph)
-        return jsonify(ph.__dict__), 201
+        db.session.add(ph)
+        db.session.commit()
+        return jsonify({
+            'policyholder_id': ph.policyholder_id,
+            'name': ph.name,
+            'contact_info': ph.contact_info
+        }), 201
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/policyholders/<policyholder_id>', methods=['GET'])
 def get_policyholder(policyholder_id):
-    ph = manager.get_policyholder(policyholder_id)
-    if ph:
-        return jsonify(ph.__dict__), 200
-    return jsonify({"error": "Policyholder not found"}), 404
+    ph = Policyholder.query.get_or_404(policyholder_id)
+    return jsonify({
+        'policyholder_id': ph.policyholder_id,
+        'name': ph.name,
+        'contact_info': ph.contact_info
+    }), 200
 
 @app.route('/policyholders/<policyholder_id>', methods=['PUT'])
 def update_policyholder(policyholder_id):
+    ph = Policyholder.query.get_or_404(policyholder_id)
     data = request.get_json()
     try:
-        updates = {}
         if 'name' in data:
-            updates['name'] = data['name']
+            ph.name = data['name']
         if 'contact_info' in data:
-            updates['contact_info'] = data['contact_info']
-        
-        manager.update_policyholder(policyholder_id, **updates)
-        return jsonify(manager.get_policyholder(policyholder_id).__dict__), 200
+            ph.contact_info = data['contact_info']
+        db.session.commit()
+        return jsonify({
+            'policyholder_id': ph.policyholder_id,
+            'name': ph.name,
+            'contact_info': ph.contact_info
+        }), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/policyholders/<policyholder_id>', methods=['DELETE'])
 def delete_policyholder(policyholder_id):
+    ph = Policyholder.query.get_or_404(policyholder_id)
     try:
-        manager.delete_policyholder(policyholder_id)
+        db.session.delete(ph)
+        db.session.commit()
         return jsonify({"message": "Policyholder deleted successfully"}), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 # Policy endpoints
@@ -64,67 +122,85 @@ def create_policy():
         policy = Policy(
             policy_id=data['policy_id'],
             policy_type=data['policy_type'],
-            coverage_amount=float(data['coverage_amount']),
+            coverage_amount=data['coverage_amount'],
             start_date=datetime.strptime(data['start_date'], "%Y-%m-%d").date(),
             end_date=datetime.strptime(data['end_date'], "%Y-%m-%d").date(),
             policyholder_id=data['policyholder_id']
         )
-        manager.create_policy(policy)
-        return jsonify(policy.__dict__), 201
+        db.session.add(policy)
+        db.session.commit()
+        return jsonify({
+            'policy_id': policy.policy_id,
+            'policy_type': policy.policy_type,
+            'coverage_amount': float(policy.coverage_amount),
+            'start_date': str(policy.start_date),
+            'end_date': str(policy.end_date),
+            'policyholder_id': policy.policyholder_id
+        }), 201
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/policies/<policy_id>', methods=['GET'])
 def get_policy(policy_id):
-    policy = manager.get_policy(policy_id)
-    if policy:
-        return jsonify({
-            "policy_id": policy.policy_id,
-            "policy_type": policy.policy_type,
-            "coverage_amount": policy.coverage_amount,
-            "start_date": str(policy.start_date),
-            "end_date": str(policy.end_date),
-            "policyholder_id": policy.policyholder_id
-        }), 200
-    return jsonify({"error": "Policy not found"}), 404
+    policy = Policy.query.get_or_404(policy_id)
+    return jsonify({
+        'policy_id': policy.policy_id,
+        'policy_type': policy.policy_type,
+        'coverage_amount': float(policy.coverage_amount),
+        'start_date': str(policy.start_date),
+        'end_date': str(policy.end_date),
+        'policyholder_id': policy.policyholder_id
+    }), 200
 
 @app.route('/policies', methods=['GET'])
 def get_all_policies():
-    policies = list(manager.policies.values())
+    policies = Policy.query.all()
     return jsonify([{
-        "policy_id": p.policy_id,
-        "policy_type": p.policy_type,
-        "coverage_amount": p.coverage_amount,
-        "start_date": str(p.start_date),
-        "end_date": str(p.end_date),
-        "policyholder_id": p.policyholder_id
+        'policy_id': p.policy_id,
+        'policy_type': p.policy_type,
+        'coverage_amount': float(p.coverage_amount),
+        'start_date': str(p.start_date),
+        'end_date': str(p.end_date),
+        'policyholder_id': p.policyholder_id
     } for p in policies]), 200
 
 @app.route('/policies/<policy_id>', methods=['PUT'])
 def update_policy(policy_id):
+    policy = Policy.query.get_or_404(policy_id)
     data = request.get_json()
     try:
-        updates = {}
         if 'policy_type' in data:
-            updates['policy_type'] = data['policy_type']
+            policy.policy_type = data['policy_type']
         if 'coverage_amount' in data:
-            updates['coverage_amount'] = float(data['coverage_amount'])
+            policy.coverage_amount = data['coverage_amount']
         if 'start_date' in data:
-            updates['start_date'] = datetime.strptime(data['start_date'], "%Y-%m-%d").date()
+            policy.start_date = datetime.strptime(data['start_date'], "%Y-%m-%d").date()
         if 'end_date' in data:
-            updates['end_date'] = datetime.strptime(data['end_date'], "%Y-%m-%d").date()
+            policy.end_date = datetime.strptime(data['end_date'], "%Y-%m-%d").date()
         
-        manager.update_policy(policy_id, **updates)
-        return jsonify(manager.get_policy(policy_id).__dict__), 200
+        db.session.commit()
+        return jsonify({
+            'policy_id': policy.policy_id,
+            'policy_type': policy.policy_type,
+            'coverage_amount': float(policy.coverage_amount),
+            'start_date': str(policy.start_date),
+            'end_date': str(policy.end_date),
+            'policyholder_id': policy.policyholder_id
+        }), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/policies/<policy_id>', methods=['DELETE'])
 def delete_policy(policy_id):
+    policy = Policy.query.get_or_404(policy_id)
     try:
-        manager.delete_policy(policy_id)
+        db.session.delete(policy)
+        db.session.commit()
         return jsonify({"message": "Policy deleted successfully"}), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 # Claim endpoints
@@ -135,58 +211,77 @@ def create_claim():
         claim = Claim(
             claim_id=data['claim_id'],
             description=data['description'],
-            amount=float(data['amount']),
+            amount=data['amount'],
             date=datetime.strptime(data['date'], "%Y-%m-%d").date(),
             status=data.get('status', 'Pending'),
             policy_id=data['policy_id']
         )
-        manager.create_claim(claim)
-        return jsonify(claim.__dict__), 201
+        db.session.add(claim)
+        db.session.commit()
+        return jsonify({
+            'claim_id': claim.claim_id,
+            'description': claim.description,
+            'amount': float(claim.amount),
+            'date': str(claim.date),
+            'status': claim.status,
+            'policy_id': claim.policy_id
+        }), 201
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/claims/<claim_id>', methods=['GET'])
 def get_claim(claim_id):
-    claim = manager.get_claim(claim_id)
-    if claim:
-        return jsonify({
-            "claim_id": claim.claim_id,
-            "description": claim.description,
-            "amount": claim.amount,
-            "date": str(claim.date),
-            "status": claim.status,
-            "policy_id": claim.policy_id
-        }), 200
-    return jsonify({"error": "Claim not found"}), 404
+    claim = Claim.query.get_or_404(claim_id)
+    return jsonify({
+        'claim_id': claim.claim_id,
+        'description': claim.description,
+        'amount': float(claim.amount),
+        'date': str(claim.date),
+        'status': claim.status,
+        'policy_id': claim.policy_id
+    }), 200
 
 @app.route('/claims/<claim_id>', methods=['PUT'])
 def update_claim(claim_id):
+    claim = Claim.query.get_or_404(claim_id)
     data = request.get_json()
     try:
-        updates = {}
         if 'description' in data:
-            updates['description'] = data['description']
+            claim.description = data['description']
         if 'amount' in data:
-            updates['amount'] = float(data['amount'])
+            claim.amount = data['amount']
         if 'date' in data:
-            updates['date'] = datetime.strptime(data['date'], "%Y-%m-%d").date()
+            claim.date = datetime.strptime(data['date'], "%Y-%m-%d").date()
         if 'status' in data:
-            updates['status'] = data['status']
+            claim.status = data['status']
         
-        manager.update_claim(claim_id, **updates)
-        return jsonify(manager.get_claim(claim_id).__dict__), 200
+        db.session.commit()
+        return jsonify({
+            'claim_id': claim.claim_id,
+            'description': claim.description,
+            'amount': float(claim.amount),
+            'date': str(claim.date),
+            'status': claim.status,
+            'policy_id': claim.policy_id
+        }), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
 @app.route('/claims/<claim_id>', methods=['DELETE'])
 def delete_claim(claim_id):
+    claim = Claim.query.get_or_404(claim_id)
     try:
-        manager.delete_claim(claim_id)
+        db.session.delete(claim)
+        db.session.commit()
         return jsonify({"message": "Claim deleted successfully"}), 200
     except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
-if __name__ == '__main__':
+if _name_ == '_main_':
+    # Create all database tables
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
-
-
