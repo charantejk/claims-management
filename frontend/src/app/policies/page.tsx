@@ -14,9 +14,7 @@ interface Policy {
 const PolicyCRUD: React.FC = () => {
   const [data, setData] = useState<Policy[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [operation, setOperation] = useState<
-    "create" | "read" | "update" | "delete"
-  >("read");
+  const [operation, setOperation] = useState<"create" | "read" | "update" | "delete">("read");
   const [searchId, setSearchId] = useState("");
   const [formData, setFormData] = useState<Policy>({
     policy_id: "",
@@ -40,7 +38,7 @@ const PolicyCRUD: React.FC = () => {
   ) => {
     setLoading(true);
     let response;
-    const baseUrl = "http://localhost:5000/policies";
+    const baseUrl = "https://renderbackend-3d5c.onrender.com/policies";
 
     if (op === "create") {
       response = await fetch(baseUrl, {
@@ -71,6 +69,11 @@ const PolicyCRUD: React.FC = () => {
     }
 
     if (op !== "delete") {
+      if (!response) {
+        alert("No response received from server");
+        setLoading(false);
+        return;
+      }
       const result = await response.json();
       if (Array.isArray(result)) {
         setData(result);

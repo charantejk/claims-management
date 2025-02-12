@@ -40,7 +40,7 @@ const ClaimCRUD: React.FC = () => {
   const handleOperation = async (op: "create" | "read" | "update" | "delete") => {
     setLoading(true);
     let response;
-    const baseUrl = "http://localhost:5000/claims";
+    const baseUrl = "https://renderbackend-3d5c.onrender.com/claims";
 
     if (op === "create") {
       response = await fetch(baseUrl, {
@@ -72,7 +72,15 @@ const ClaimCRUD: React.FC = () => {
     }
 
     if (op !== "delete") {
-      const result = await response.json();
+      if (op === "create") {
+        // Validate formData before proceeding
+        if (!formData.claim_id || !formData.description || !formData.amount || !formData.date || !formData.status || !formData.policy_id) {
+          alert("All fields are required for creating a claim.");
+          setLoading(false);
+          return;
+        }
+      }
+      const result = await response?.json();
       if (Array.isArray(result)) {
         setData(result);
       } else {

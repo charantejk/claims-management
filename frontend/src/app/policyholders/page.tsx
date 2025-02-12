@@ -1,26 +1,53 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
 
+interface Policyholder {
+  name: string;
+  contact_info: string;
+  policyholder_id: string;
+}
+
 const PolicyholderCRUD = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<(Policyholder | { message: string })[]>([]);
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState('read');
   const [searchId, setSearchId] = useState('');
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Policyholder>({
     name: '',
     contact_info: '',
     policyholder_id: ''
   });
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const handleOperation = async (op) => {
+  const validateForm = () => {
+    const newErrors : {[key: string]: string} = {};
+    if (!formData.name) newErrors.name = 'Name is required';
+    if (!formData.contact_info) newErrors.contact_info = 'Contact info is required';
+    if (!formData.policyholder_id) newErrors.policyholder_id = 'Policyholder ID is required';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  interface OperationResponse {
+    message?: string;
+    name?: string;
+    contact_info?: string;
+    policyholder_id?: string;
+  }
+
+  const handleOperation = async (op: string) => {
     setOperation(op);
     setLoading(true);
 
-    let response;
-    const baseUrl = 'http://localhost:5000/policyholders';
-    
+    let response: Response;
+    const baseUrl = 'https://renderbackend-3d5c.onrender.com/policyholders';
+
+    if (op === 'create' && !validateForm()) {
+      setLoading(false);
+      return;
+    }
+
     switch (op) {
       case 'create':
         response = await fetch(baseUrl, {
@@ -54,7 +81,7 @@ const PolicyholderCRUD = () => {
 
     if (op !== 'delete') {
       const result = await response.json();
-      setData(Array.isArray(result) ? result : [result]);
+      setData(Array.isArray(result) ? result : [result as Policyholder]);
     } else {
       setData([{ message: 'Policyholder deleted successfully' }]);
     }
@@ -62,7 +89,9 @@ const PolicyholderCRUD = () => {
     setLoading(false);
   };
 
-  const handleInputChange = (e) => {
+  interface InputChangeEvent extends React.ChangeEvent<HTMLInputElement> {}
+
+  const handleInputChange = (e: InputChangeEvent) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -162,6 +191,7 @@ const PolicyholderCRUD = () => {
                   onChange={handleInputChange}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black placeholder-black"
                 />
+                {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
               </div>
               <div>
                 <label className="block text-sm text-gray-500 mb-1">Contact Info</label>
@@ -172,6 +202,7 @@ const PolicyholderCRUD = () => {
                   onChange={handleInputChange}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+                {errors.contact_info && <p className="text-red-500 text-sm">{errors.contact_info}</p>}
               </div>
               {operation === 'create' && (
                 <div>
@@ -183,6 +214,7 @@ const PolicyholderCRUD = () => {
                     onChange={handleInputChange}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
+                  {errors.policyholder_id && <p className="text-red-500 text-sm">{errors.policyholder_id}</p>}
                 </div>
               )}
             </div>
@@ -198,15 +230,16 @@ const PolicyholderCRUD = () => {
                   {operation === 'delete' ? 'Operation Result' : 'Policyholder Details'}
                 </h1>
                 {operation !== 'delete' && (
-                  <p className="text-sm text-gray-500">ID: {data[0].policyholder_id}</p>
+                  <p className="text-sm text-gray-500">
+                    ID: {(data[0]as Policyholder).policyholder_id}</p>
                 )}
               </div>
               
               {operation === 'delete' ? (
-                <p className="text-gray-900">{data[0].message}</p>
+                <p className="text-gray-900">{(data[0] as {message: string}).message}</p>
               ) : (
                 <div className="space-y-4">
-                  {data.map((item, index) => (
+                   {(data.filter((item): item is Policyholder => !('message' in item))).map((item, index) => (
                     <div key={index} className="border-t border-gray-200 pt-4">
                       <div>
                         <p className="text-sm text-gray-500">Name</p>
